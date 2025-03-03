@@ -184,9 +184,7 @@ async def set_skip_number(bot, message):
     else:
         await message.reply("Give me a skip number")
 
-
-
-async def index_files_to_db(lst_msg_id, chat, msg, bot):
+   async def index_files_to_db(lst_msg_id, chat, msg, bot):
     total_files = 0
     duplicate = 0
     errors = 0
@@ -223,7 +221,18 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     continue
                 media.file_type = message.media.value
                 media.caption = message.caption
-                aynav, vnay = await save_file(media)
+                
+                # Retry logic for msg_id errors
+                for attempt in range(3):
+                    try:
+                        aynav, vnay = await save_file(media)
+                        break  # Exit the retry loop if successful
+                    except BadMsgNotification as e:
+                        if e.error_code == 16:  # msg_id is too low
+                            await asyncio.sleep(1)  # Wait for a second before retrying
+                        else:
+                            raise
+                
                 if aynav:
                     total_files += 1
                 elif vnay == 0:
@@ -234,4 +243,4 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
             logger.exception(e)
             await msg.edit(f'Error baby: {e}')
         else:
-            await msg.edit(f'Succesfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>')
+            await msg.edit(f'Successfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>')
