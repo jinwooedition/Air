@@ -1,160 +1,196 @@
 import logging
-import asyncio
-from pyrogram import Client, filters, enums
-from pyrogram.errors import FloodWait
-from pyrogram.errors.exceptions.bad_request_400 import ChannelInvalid, ChatAdminRequired, UsernameInvalid, UsernameNotModified
-from info import ADMINS, LAZY_RENAMERS
-from info import INDEX_REQ_CHANNEL as LOG_CHANNEL
-from info import LAZY_MODE 
-from database.ia_filterdb import save_file
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import logging.config
+import ntplib
+from time import ctime, sleep
+
+# Credit @LazyDeveloper.
+# Please Don't remove credit.
+# Born to make history @LazyDeveloper !
+# Thank you LazyDeveloper for helping us in this Journey
+# 🥰  Thank you for giving me credit @LazyDeveloperr  🥰
+# for any error please contact me -> telegram@LazyDeveloperr or insta @LazyDeveloperr 
+# rip paid developers 🤣 - >> No need to buy paid source code while @LazyDeveloperr is here 😍😍
+# Get logging configurations
+logging.config.fileConfig('logging.conf')
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("imdbpy").setLevel(logging.ERROR)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logging.getLogger("aiohttp").setLevel(logging.ERROR)
+logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
+
+import os
+from pyrogram import Client, __version__
+from pyrogram.raw.all import layer
+from database.ia_filterdb import Media
+from database.users_chats_db import db
+from info import *
 from utils import temp
-import re
-import humanize
-from info import ADMINS 
-from lazybot import LazyPrincessBot 
+from typing import Union, Optional, AsyncGenerator
+from pyrogram import types
+from aiohttp import web
+from plugins import web_server
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-lock = asyncio.Lock()
-semaphore = asyncio.Semaphore(1) # create a semaphore with initial value of 1
+import asyncio
+from pyrogram import idle
+from lazybot import LazyPrincessBot
 
-@Client.on_callback_query(filters.regex(r'^index'))
-async def index_files(bot, query):
-    if query.data.startswith('index_cancel'):
-        temp.CANCEL = True
-        return await query.answer("Cancelling Indexing")
-    _, raju, chat, lst_msg_id, from_user = query.data.split("#")
-    if raju == 'reject':
-        await query.message.delete()
-        await bot.send_message(int(from_user),
-                               f'Your Submission for indexing {chat} has been decliened by our moderators.',
-                               reply_to_message_id=int(lst_msg_id))
-        return
+from util.keepalive import ping_server
+from lazybot.clients import initialize_clients
 
-    if lock.locked():
-        return await query.answer('Wait until previous process complete.', show_alert=True)
-    msg = query.message
 
-    await query.answer('Processing...⏳', show_alert=True)
-    if int(from_user) not in ADMINS:
-        await bot.send_message(int(from_user),
-                               f'Your Submission for indexing {chat} has been accepted by our moderators and will be added soon.',
-                               reply_to_message_id=int(lst_msg_id))
-    await msg.edit(
-        "Starting Indexing",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton('Cancel', callback_data='index_cancel')]]
-        )
-    )
+PORT = "8080"
+LazyPrincessBot.start()
+loop = asyncio.get_event_loop()
+
+
+def sync_time():
     try:
-        chat = int(chat)
-    except:
-        chat = chat
-    await index_files_to_db(int(lst_msg_id), chat, msg, bot)
-
-@Client.on_message((filters.forwarded | (filters.regex("(https://)?(t\.me/|telegram\.me/|telegram\.dog/)(c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")) & filters.text ) & filters.private & filters.incoming)
-async def send_for_index(bot, message):
-    if message.text:
-        regex = re.compile("(https://)?(t\.me/|telegram\.me/|telegram\.dog/)(c/)?(\d+|[a-zA-Z_0-9]+)/(\d+)$")
-        match = regex.match(message.text)
-        if not match:
-            return await message.reply('Invalid link')
-        chat_id = match.group(4)
-        last_msg_id = int(match.group(5))
-        if chat_id.isnumeric():
-            chat_id  = int(("-100" + chat_id))
-    elif message.forward_from_chat.type == enums.ChatType.CHANNEL:
-        last_msg_id = message.forward_from_message_id
-        chat_id = message.forward_from_chat.username or message.forward_from_chat.id
-    else:
-        return
-    try:
-        await bot.get_chat(chat_id)
-    except ChannelInvalid:
-        return await message.reply('This may be a private channel / group. Make me an admin over there to index the files.')
-    except (UsernameInvalid, UsernameNotModified):
-        return await message.reply('Invalid Link specified.')
+        client = ntplib.NTPClient()
+        response = client.request('pool.ntp.org')
+        print(f"Time before sync: {ctime()}")
+        print(f"Time after sync: {ctime(response.tx_time)}")
     except Exception as e:
-        logger.exception(e)
-        return await message.reply(f'Errors - {e}')
+        print(f"Could not sync time: {e}")
+
+
+async def Lazy_start():
+    print('\n')
+    print(' Initalizing Telegram Bot ')
+    if not os.path.isdir(DOWNLOAD_LOCATION):
+        os.makedirs(DOWNLOAD_LOCATION)
+    bot_info = await LazyPrincessBot.get_me()
+    LazyPrincessBot.username = bot_info.username
+    await initialize_clients()
+    if ON_HEROKU:
+        asyncio.create_task(ping_server())
+    b_users, b_chats , lz_verified = await db.get_banned()
+    temp.BANNED_USERS = b_users
+    temp.BANNED_CHATS = b_chats
+    temp.LAZY_VERIFIED_CHATS = lz_verified
+    await Media.ensure_indexes()
+    me = await LazyPrincessBot.get_me()
+    temp.ME = me.id
+    temp.U_NAME = me.username
+    temp.B_NAME = me.first_name
+    LazyPrincessBot.username = '@' + me.username
+    app = web.AppRunner(await web_server())
+    await app.setup()
+    bind_address = "0.0.0.0" if ON_HEROKU else BIND_ADRESS
+    await web.TCPSite(app, bind_address, PORT).start()
+    logging.info(f"{me.first_name} with for Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
+    logging.info(LOG_STR)
+    await idle()
+
+
+if __name__ == '__main__':
+    sync_time()
+    sleep(5)  # Add a delay to ensure time sync before starting the bot
     try:
-        k = await bot.get_messages(chat_id, last_msg_id)
-    except:
-        return await message.reply('Make Sure That i am An Admin In The Channel, if channel is private')
-    if k.empty:
-        return await message.reply('This may be group and i am not a admin of the group.')
+        loop.run_until_complete(Lazy_start())
+        logging.info('-----------------------🧐 Service running in Lazy Mode 😴-----------------------')
+    except KeyboardInterrupt:
+        logging.info('-----------------------😜 Service Stopped Sweetheart 😝-----------------------')import logging
+import logging.config
+import ntplib
+from time import ctime, sleep
 
-    if message.from_user.id in ADMINS:
-        if (LAZY_MODE==True):
-            file = getattr(message, message.media.value)
-            filename = file.file_name
-            filesize = humanize.naturalsize(file.file_size) 
-            buttons = [
-                [ InlineKeyboardButton("📝✧ S𝚝ar𝚝 re𝚗aᗰi𝚗g ✧📝", callback_data="rename") ],
-                [ InlineKeyboardButton('📇✧✧  S𝚝ar𝚝 iŋdᗴＸi𝚗g  ✧✧📇',callback_data=f'index#accept#{chat_id}#{last_msg_id}#{message.from_user.id}')],
-                [ InlineKeyboardButton('⨳  C L Ф S Ξ  ⨳', callback_data='cancel'),]
-            ]
-            reply_markup = InlineKeyboardMarkup(buttons)
-            return await message.reply(
-                f'\n⨳ *•.¸♡ LΛＺ𝐲 ＭⓄｄ𝓔 ♡¸.•* ⨳\n\n**__What do you want me to do with this file.?__**\n\n🪬Chat ID/ Username: <code>{chat_id}</code>\nℹ️Last Message ID: <code>{last_msg_id}</code> \n\n🎞**File Name** :- `{filename}`\n\n⚙️**File Size** :- `{filesize}`',
-                reply_to_message_id=message.id,
-                reply_markup=reply_markup)
-        else:
-            buttons = [
-                [
-                    InlineKeyboardButton('Yes',
-                                         callback_data=f'index#accept#{chat_id}#{last_msg_id}#{message.from_user.id}')
-                ],
-                [
-                    InlineKeyboardButton('⨳  C L Ф S Ξ  ⨳', callback_data='close_data'),
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(buttons)
-            return await message.reply(
-                f'Do you Want To Index This Channel/ Group ?\n\nChat ID/ Username: <code>{chat_id}</code>\nLast Message ID: <code>{last_msg_id}</code>',
-                reply_markup=reply_markup)
+# Credit @LazyDeveloper.
+# Please Don't remove credit.
+# Born to make history @LazyDeveloper !
+# Thank you LazyDeveloper for helping us in this Journey
+# 🥰  Thank you for giving me credit @LazyDeveloperr  🥰
+# for any error please contact me -> telegram@LazyDeveloperr or insta @LazyDeveloperr 
+# rip paid developers 🤣 - >> No need to buy paid source code while @LazyDeveloperr is here 😍😍
+# Get logging configurations
+logging.config.fileConfig('logging.conf')
+logging.getLogger().setLevel(logging.INFO)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("imdbpy").setLevel(logging.ERROR)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logging.getLogger("aiohttp").setLevel(logging.ERROR)
+logging.getLogger("aiohttp.web").setLevel(logging.ERROR)
+logging.getLogger("pyrogram").setLevel(logging.WARNING)
 
-    if type(chat_id) is int:
-        try:
-            link = (await bot.create_chat_invite_link(chat_id)).invite_link
-        except ChatAdminRequired: 
-            return await message.reply('Make sure i am an admin in the chat and have permission to invite users.')
-    else:
-        link = f"@{message.forward_from_chat.username}"
-    buttons = [
-        [
-            InlineKeyboardButton('Request Index',
-                                 callback_data=f'index#accept#{chat_id}#{last_msg_id}#{message.from_user.id}')
-        ],
-        [
-            InlineKeyboardButton('Reject Index',
-                                 callback_data=f'index#reject#{chat_id}#{message.id}#{message.from_user.id}'),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await bot.send_message(LOG_CHANNEL,
-                           f'#IndexRequest\n\nBy : {message.from_user.mention} (<code>{message.from_user.id}</code>)\nChat ID/ Username - <code> {chat_id}</code>\nLast Message ID - <code>{last_msg_id}</code>\nInviteLink - {link}',
-                           reply_markup=reply_markup)
-    if (LAZY_MODE == True):
-        if message.from_user.id in LAZY_RENAMERS:
-            k = await message.reply('🎉\n\n\n❤️ Thank You For the Contribution, Wait For My Moderators to verify the files.\n\n\n🎁')
-            buttons = [
-                        [InlineKeyboardButton("📝✧✧ S𝚝ar𝚝 re𝚗aᗰi𝚗g ✧✧📝", callback_data="rename") ],
-                        [InlineKeyboardButton('⨳  C L Ф S Ξ  ⨳', callback_data='cancel')]]
-            reply_markup = InlineKeyboardMarkup(buttons)
-            file = getattr(message, message.media.value)
-            filename = file.file_name
-            filesize = humanize.naturalsize(file.file_size) 
-            await message.reply(
-                                f".\n⨳ *•.¸♡ LΛＺ𝐲 ＭⓄｄ𝓔 ♡¸.•* ⨳\n\nBecause you are an Authentic user, please don't hesitate to ask me for any other help...\n\n🪬Chat ID/ Username: <code>{chat_id}</code>\nℹ️Last Message ID: <code>{last_msg_id}</code> \n\n🎞**File Name** :- `{filename}`\n\n⚙️**File Size** :- `{filesize}`\n\nYou can simply close this window or perform following actions, it's upon you",
-                                reply_to_message_id=message.id,
-                                reply_markup=reply_markup)
-            await asyncio.sleep(600)
-            await k.delete()
-        else :      
-            await message.reply('🎉\n\n\n❤️ Thank You For the Contribution, Wait For My Moderators to verify the files.\n\n\n🎁')
-            buttons = [
+import os
+from pyrogram import Client, __version__
+from pyrogram.raw.all import layer
+from database.ia_filterdb import Media
+from database.users_chats_db import db
+from info import *
+from utils import temp
+from typing import Union, Optional, AsyncGenerator
+from pyrogram import types
+from aiohttp import web
+from plugins import web_server
+
+import asyncio
+from pyrogram import idle
+from lazybot import LazyPrincessBot
+
+from util.keepalive import ping_server
+from lazybot.clients import initialize_clients
+
+
+PORT = "8080"
+LazyPrincessBot.start()
+loop = asyncio.get_event_loop()
+
+
+def sync_time():
+    try:
+        client = ntplib.NTPClient()
+        response = client.request('pool.ntp.org')
+        print(f"Time before sync: {ctime()}")
+        print(f"Time after sync: {ctime(response.tx_time)}")
+    except Exception as e:
+        print(f"Could not sync time: {e}")
+
+
+async def Lazy_start():
+    print('\n')
+    print(' Initalizing Telegram Bot ')
+    if not os.path.isdir(DOWNLOAD_LOCATION):
+        os.makedirs(DOWNLOAD_LOCATION)
+    bot_info = await LazyPrincessBot.get_me()
+    LazyPrincessBot.username = bot_info.username
+    await initialize_clients()
+    if ON_HEROKU:
+        asyncio.create_task(ping_server())
+    b_users, b_chats , lz_verified = await db.get_banned()
+    temp.BANNED_USERS = b_users
+    temp.BANNED_CHATS = b_chats
+    temp.LAZY_VERIFIED_CHATS = lz_verified
+    await Media.ensure_indexes()
+    me = await LazyPrincessBot.get_me()
+    temp.ME = me.id
+    temp.U_NAME = me.username
+    temp.B_NAME = me.first_name
+    LazyPrincessBot.username = '@' + me.username
+    app = web.AppRunner(await web_server())
+    await app.setup()
+    bind_address = "0.0.0.0" if ON_HEROKU else BIND_ADRESS
+    await web.TCPSite(app, bind_address, PORT).start()
+    logging.info(f"{me.first_name} with for Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
+    logging.info(LOG_STR)
+    await idle()
+
+
+if __name__ == '__main__':
+    sync_time()
+    sleep(5)  # Add a delay to ensure time sync before starting the bot
+    try:
+        loop.run_until_complete(Lazy_start())
+        logging.info('-----------------------🧐 Service running in Lazy Mode 😴-----------------------')
+    except KeyboardInterrupt:
+        logging.info('-----------------------😜 Service Stopped Sweetheart 😝-----------------------')
                         [InlineKeyboardButton("📝✧✧ S𝚝ar𝚝 re𝚗aᗰi𝚗g ✧✧📝", callback_data="requireauth") ],
                         [InlineKeyboardButton('⨳  C L Ф S Ξ  ⨳', callback_data='cancel')]]
             reply_markup = InlineKeyboardMarkup(buttons)
