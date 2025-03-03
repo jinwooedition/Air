@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from pyrogram import Client, filters, enums
-from pyrogram.errors import FloodWait
+from pyrogram.errors import FloodWait, BadMsgNotification
 from pyrogram.errors.exceptions.bad_request_400 import ChannelInvalid, ChatAdminRequired, UsernameInvalid, UsernameNotModified
 from info import ADMINS, LAZY_RENAMERS
 from info import INDEX_REQ_CHANNEL as LOG_CHANNEL
@@ -170,8 +170,6 @@ async def send_for_index(bot, message):
     else:
         await message.reply('🎉\n\n\n❤️ Thank You For the Contribution, Wait For My Moderators to verify the files.\n\n\n🎁')
 
-
-
 @Client.on_message(filters.command('setskip') & filters.user(ADMINS))
 async def set_skip_number(bot, message):
     if ' ' in message.text:
@@ -184,7 +182,6 @@ async def set_skip_number(bot, message):
         temp.CURRENT = int(skip)
     else:
         await message.reply("Give me a skip number")
-
 
 async def index_files_to_db(lst_msg_id, chat, msg, bot):
     total_files = 0
