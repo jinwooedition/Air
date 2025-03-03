@@ -222,7 +222,7 @@ async def set_skip_number(bot, message):
                 media.file_type = message.media.value
                 media.caption = message.caption
                 
-                # Retry logic for msg_id errors
+                Retry logic for msg_id errors
                 for attempt in range(3):
                     try:
                         aynav, vnay = await save_file(media)
