@@ -220,7 +220,7 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     continue
                 media.file_type = message.media.value
                 media.caption = message.caption
-                
+
                 # Retry logic for msg_id errors
                 for attempt in range(3):
                     try:
@@ -229,9 +229,10 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
                     except BadMsgNotification as e:
                         if e.error_code == 16:  # msg_id is too low
                             await asyncio.sleep(1)  # Wait for a second before retrying
+                            continue  # Retry the loop
                         else:
                             raise
-                
+
                 if aynav:
                     total_files += 1
                 elif vnay == 0:
@@ -242,4 +243,4 @@ async def index_files_to_db(lst_msg_id, chat, msg, bot):
             logger.exception(e)
             await msg.edit(f'Error: {e}')
         else:
-            await msg.edit(f'Successfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media messages skipped: <code>{no_media + unsupported}</code>(Unsupported Media - `{unsupported}` )\nErrors Occurred: <code>{errors}</code>')
+            await msg.edit(f'Successfully saved <code>{total_files}</code> to dataBase!\nDuplicate Files Skipped: <code>{duplicate}</code>\nDeleted Messages Skipped: <code>{deleted}</code>\nNon-Media Messages Skipped: <code>{no_media}</code>\nUnsupported Files Skipped: <code>{unsupported}</code>')
